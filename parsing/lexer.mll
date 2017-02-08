@@ -437,19 +437,34 @@ rule token = parse
         ("\"" ([^ '\010' '\013' '\"' ] * as name) "\"")?) as directive
         [^ '\010' '\013'] * newline
       {
-        match int_of_string num with
-        | exception _ ->
-            (* PR#7165 *)
-            let loc = Location.curr lexbuf in
-            let explanation = "line number out of range" in
-            let error = Invalid_directive (directive, Some explanation) in
-            raise (Error (error, loc))
-        | line_num ->
-           (* Documentation says that the line number should be
-              positive, but we have never guarded against this and it
-              might have useful hackish uses. *)
-            update_loc lexbuf name line_num true 0;
-            token lexbuf
+        begin
+          let loc = Location.curr lexbuf in
+          let start_pos = lexbuf.lex_start_p in
+          let start_col = start_pos.pos_cnum - start_pos.pos_bol in
+          begin
+            (* PR#6604 *)
+            if start_col > 0 then begin
+                let explanation = "line number directive not at the beginning of file" in
+                Location.prerr_warning loc (Warnings.Deprecated explanation)
+              end;
+            if name = None then begin
+                let explanation = "line number directive should specify a filename" in
+                Location.prerr_warning loc (Warnings.Deprecated explanation)
+              end;
+            match int_of_string num with
+            | exception _ ->
+               (* PR#7165 *)
+               let explanation = "line number out of range" in
+               let error = Invalid_directive (directive, Some explanation) in
+               raise (Error (error, loc))
+            | line_num ->
+               (* Documentation says that the line number should be
+                  positive, but we have never guarded against this and it
+                  might have useful hackish uses. *)
+               update_loc lexbuf name line_num true 0;
+          end
+        end;
+        token lexbuf
       }
   | "#"  { HASH }
   | "&"  { AMPERSAND }
